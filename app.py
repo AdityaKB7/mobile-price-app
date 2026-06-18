@@ -39,22 +39,33 @@ def predict():
     try:
         data = request.get_json()
         
-        # TFLite is strict about data types, so we explicitly force it to float32
+        # 1. Format input array as float32
         features = np.array([data['features']], dtype=np.float32)
         
-        # Scale features
+        # 2. Scale features
         features_scaled = scaler.transform(features)
         
-        # Feed the scaled numbers into the model's input channel
-        interpreter.set_tensor(input_details[0]['index'], features_scaled.astype(np.float32))
+        # --- THE BATCH HACK STARTS HERE ---
+        # 3. Create a fake batch of 32 phones (filled with zeros)
+        batch_features = np.zeros((32, 20), dtype=np.float32)
         
-        # Run the neural network
+        # 4. Put our REAL phone data into the very first row
+        batch_features[0] = features_scaled[0]
+        
+        # 5. Push the batch of 32 into the model
+        interpreter.set_tensor(input_details[0]['index'], batch_features)
+        
+        # 6. Run the inference
         interpreter.invoke()
         
-        # Pull the 4 probabilities out of the model's output channel
-        probabilities = interpreter.get_tensor(output_details[0]['index'])
+        # 7. Pull all 32 prediction results
+        all_probabilities = interpreter.get_tensor(output_details[0]['index'])
         
-        # Find the winning class (0, 1, 2, or 3)
+        # 8. Grab just the probabilities for our real phone (the 1st one)
+        probabilities = all_probabilities[0]
+        # --- THE BATCH HACK ENDS HERE ---
+        
+        # Find the winning class for our real phone
         predicted_class = int(np.argmax(probabilities))
         
         return jsonify({
